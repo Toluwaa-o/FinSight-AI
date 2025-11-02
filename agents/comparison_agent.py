@@ -1,23 +1,27 @@
-from uuid import uuid4
-from typing import List, Optional
-import json
-from openai import AsyncOpenAI
-
-from models.a2a import (
-    A2AMessage, TaskResult, TaskStatus, Artifact,
-    MessagePart, MessageConfiguration
-)
+import os
+from utils.data import system_prompt
 from utils.utils import (
     compare_companies, handle_tool_calls,
     is_comparison_query, tools
 )
-from utils.data import system_prompt
+from models.a2a import (
+    A2AMessage, TaskResult, TaskStatus, Artifact,
+    MessagePart, MessageConfiguration
+)
+from uuid import uuid4
+from typing import List, Optional
+import json
+from openai import AsyncOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ComparisonAgent:
     def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini"):
-        self.client = AsyncOpenAI(api_key=openai_api_key)
-        self.model = model
+        self.client = AsyncOpenAI(api_key=os.getenv("GOOGLE_API_KEY"),
+                                  base_url=os.getenv("BASE_URL"))
+        self.model = os.getenv('MODEL')
         self.conversations = {}  # Store conversation history by context_id
 
     async def process_messages(
