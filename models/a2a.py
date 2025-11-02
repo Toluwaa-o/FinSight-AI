@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, List, Dict, Any
+from typing import Literal, Optional, List, Dict, Any, Union
 from datetime import datetime
 from uuid import uuid4
 
@@ -7,7 +7,7 @@ from uuid import uuid4
 class MessagePart(BaseModel):
     kind: Literal["text", "data", "file"]
     text: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Union[Dict[str, Any], List[Any]]] = None  # Can be dict or list
     file_url: Optional[str] = None
 
 
@@ -30,6 +30,7 @@ class MessageConfiguration(BaseModel):
     blocking: bool = True
     acceptedOutputModes: List[str] = ["text/plain", "application/json"]
     pushNotificationConfig: Optional[PushNotificationConfig] = None
+    historyLength: Optional[int] = 0
 
 
 class MessageParams(BaseModel):
