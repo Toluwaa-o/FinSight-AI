@@ -46,11 +46,19 @@ class ComparisonAgent:
         if not user_message:
             raise ValueError("No message provided")
         
-        # Extract text from message parts (including nested data)
-        user_text = self._extract_latest_text(user_message)
+        # Extract text and conversation history from message parts
+        user_text, message_history = self._extract_conversation_history(user_message)
         
         if not user_text:
             raise ValueError("No text content found in message")
+        
+        # Merge message history with stored history
+        # Message history takes precedence (it's the most recent context)
+        if message_history:
+            history = message_history
+        
+        # Clean HTML from current user text
+        user_text = self._clean_html(user_text)
         
         # Check if it's a comparison query
         if not is_comparison_query(user_text):
@@ -151,38 +159,82 @@ class ComparisonAgent:
                 history=messages + [response_message]
             )
 
-    def _extract_latest_text(self, message: A2AMessage) -> str:
+    def _extract_conversation_history(self, message: A2AMessage) -> tuple[str, list]:
         """
-        Extract the latest text from message parts.
+        Extract the latest text and build conversation history from message parts.
         Handles nested data arrays with historical messages.
+        
+        Returns:
+            tuple: (latest_user_text, conversation_history)
+                   conversation_history is a list of {"role": "user"/"assistant", "content": "..."}
         """
         latest_text = ""
+        history = []
         
-        for part in message.parts:
+        for part in message.parts[:5]:
             if part.kind == "text" and part.text:
-                # Direct text in the main parts
                 latest_text = part.text.strip()
             elif part.kind == "data" and part.data:
-                # Check if data is a list (history)
                 if isinstance(part.data, list):
-                    # Get the last text message from history
-                    for item in reversed(part.data):
+                    for i, item in enumerate(part.data):
                         if isinstance(item, dict) and item.get("kind") == "text":
-                            text = item.get("text", "")
-                            # Skip error messages and HTML tags
-                            if text and not text.startswith("sorry") and not text.startswith("<"):
-                                latest_text = text.strip()
-                                break
+                            text = item.get("text", "").strip()
+                            
+                            # Skip empty messages
+                            if not text:
+                                continue
+                            
+                            # Clean HTML tags from text
+                            cleaned_text = self._clean_html(text)
+                            
+                            # Determine role based on content patterns
+                            # Agent messages are typically longer explanations/responses
+                            # User messages are typically short queries
+                            if any(indicator in text.lower() for indicator in [
+                                "i need", "please provide", "you want to", 
+                                "it seems", "i'd be happy", "let me", "i can help"
+                            ]):
+                                role = "assistant"
+                            elif text.startswith("sorry, I could not"):
+                                # Skip error messages
+                                continue
+                            else:
+                                role = "user"
+                            
+                            history.append({
+                                "role": role,
+                                "content": cleaned_text
+                            })
         
-        return latest_text
+        return latest_text, history
+    
+    def _clean_html(self, text: str) -> str:
+        """Remove HTML tags from text"""
+        import re
+        # Remove HTML tags
+        clean = re.sub(r'<[^>]+>', '', text)
+        # Remove extra whitespace
+        clean = ' '.join(clean.split())
+        return clean.strip()
 
     async def _chat_with_tools(self, message: str, history: list) -> tuple[str, dict]:
         """
         Chat with OpenAI using tools for company comparison.
-        Returns (assistant_response, comparison_data)
+        
+        Args:
+            message: The current user message
+            history: Conversation history as list of {"role": "user"/"assistant", "content": "..."}
+        
+        Returns:
+            tuple: (assistant_response, comparison_data)
         """
+        # Build messages array starting with system prompt
         messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add conversation history (already in correct format)
         messages.extend(history)
+        
+        # Add current user message
         messages.append({"role": "user", "content": message})
         
         comparison_data = None
